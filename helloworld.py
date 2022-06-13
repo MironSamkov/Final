@@ -1,81 +1,89 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import plotly.figure_factory as ff
 import seaborn as sns
-import matplotlib.pyplot as plt
-import altair as alt
-
-with st.echo(code_location='below'):
-    """
-    ## Hello, World!
-    """
-
-
-    def print_hello(name="World"):
-        st.write(f"### Hello, {name}!")
-
-
-    name = st.text_input("Your name", key="name", value="Anonymous")
-    print_hello(name)
-
-    """
-    ## Добавим графики
-    Чтобы заработали библиотеки seaborn и altair, нужно добавить в проект файл 
-    `requirements.txt` с такими строчками:
-    
-        seaborn
-        altair
-    """
+import plotly.express as px
+import json
+import geojson
+import plotly.graph_objs as go
+from shapely.geometry import Polygon
+import numpy as np
+import requests
+import geopandas
+from bs4 import BeautifulSoup
+import xml
 
 
-    a = st.slider("a")
-    x = np.linspace(-6, 6, 500)
-    df = pd.DataFrame(dict(x=x, y=np.sin(a * x)))
-    fig, ax = plt.subplots()
-    sns.lineplot(data=df, x="x", y="y", ax=ax)
-    st.pyplot(fig)
 
-    """
-    ## Немного анализа данных
-    """
+st.title('Визуализация выборов')
 
+with open('Республика Адыгея (Адыгея).csv', encoding='utf8') as o:
+    RegionResults = pd.read_csv(o)
+st.write(RegionResults)
+fig1 = ff.create_distplot([RegionResults[a] for a in ['Turnout', 'Percentage']],
+                          ['Явка', 'Процент голосов за Путина'], colors=['#63F5EF', '#A6ACEC'], bin_size=.05)
+fig1.update_layout(title={
+        'text': "Явка и процент голосов за Путина",
+        'y': 0.9,
+        'x': 0.4,
+        'xanchor': 'center',
+        'yanchor': 'top'})
 
-    @st.cache
-    def get_data():
-        data_url = (
-            "https://github.com/Godoy/imdb-5000-movie-dataset/raw/"
-            "master/data/movie_metadata.csv"
-        )
-        return (
-            pd.read_csv(data_url)
-            .dropna(subset=["title_year"])
-            .assign(
-                title_year=lambda x: pd.to_datetime(
-                    x["title_year"], format="%Y"
-                )
-            )
-        )
+st.write(fig1)
 
+fig2 = px.scatter(RegionResults, x='Turnout', y='Percentage',
+                  color_discrete_sequence=['#A6ACEC'], hover_name='StationID', labels={
+                     "Turnout": "Явка",
+                     "Percentage": "Процент за Путина",
+                     "StationID": "StationID"
+                 })
+fig2.update_layout(
+    title={
+        'text': "Диаграмма рассеивания",
+        'y': 1,
+        'x': 0.5,
+        'xanchor': 'center',
+        'yanchor': 'top'})
+st.plotly_chart(fig2)
 
-    df = get_data()
+sns.set_theme(palette="icefire", font="Calibri")
+fig3 = sns.kdeplot(data=RegionResults, x='Turnout', y='Percentage', fill=True)
+fig3.axes.set_title("Плотность двумерного вектора (график KDE)", fontsize=20)
+fig3.set_xlabel("Явка", fontsize=10)
+fig3.set_ylabel("Процент за Путина", fontsize=10)
 
-    director = st.selectbox(
-        "Director", df["director_name"].value_counts().iloc[:10].index
-    )
+#, height=6
+st.pyplot()
 
-    df_selection = df[lambda x: x["director_name"] == director]
-    df_selection
+entrypoint = "https://nominatim.openstreetmap.org/search"
+params = {'state': RegionResults['Region'][0],
+          'format': 'xml',
+          'polygon_geojson': 1
+         }
+r = requests.get(entrypoint, params=params)
 
-    chart = (
-        alt.Chart(df_selection)
-        .mark_circle()
-        .encode(x=alt.X("title_year:T"), y="imdb_score", tooltip="movie_title")
-    )
+st.write(r)
+st.write(r.text)
+soup = BeautifulSoup(r.text, features='xml')
+soup1 = soup.find("place").find("Polygon").find("coordinates")
+st.write(soup1.prettify())
 
-    st.altair_chart(
-        (
-            chart
-            + chart.transform_loess("title_year", "imdb_score").mark_line()
-        ).interactive()
-        # .transform_loess добавляет сглаживающую кривую
-    )
+#RegionJson = r.json()
+#RegionPoly = geopandas.GeoDataFrame.from_features(RegionJson)
+#st.write(RegionPoly)
+"""
+for i in set(RegionResults['Subregion']):
+    st.write(i)
+    j = i
+    if str(i[-2:])=='ая':
+        j = i[:-2]+'ий'
+    st.write(j)
+    params = {'q': j,
+              'format': 'geojson'}
+    r = requests.get(entrypoint, params=params)
+    st.write(r)
+    st.write(r.text)
+    Sub = r.json()
+    SubregionPoly = geopandas.GeoDataFrame.from_features(Sub)
+    st.write(SubregionPoly)
+"""
