@@ -9,14 +9,24 @@ import plotly.graph_objs as go
 from shapely.geometry import Polygon
 import numpy as np
 import requests
-import geopandas
+import geopandas as gpd
 from bs4 import BeautifulSoup
 import xml
+import fiona
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+import networkx as nx
+from pyvis.network import Network
+import streamlit.components.v1 as components
 
 
-
-st.title('Визуализация выборов')
-
+st.title('Визуализация аномалий на выборах')
+st.write("В данном приложении можно увидеть аномалии на президенстких выборах в России "
+         "(а именно, положительную корреляцию явки и процента голосов за Путина, а также отклонения "
+         "распределений явки и процента от гауссовского распределения). Данные были получены веб-скреппингом "
+         "с сайта Центральной избирательной комиссии. В первой части проекта приводится пример для республики Адыгея в 2018, в "
+         "последней - считается регрессия для Ненецкого автономного округа в 2018. Но данный анализ можно применить к любому региону, "
+         "используя приложенный код со скреппингом.")
 with open('Республика Адыгея (Адыгея).csv', encoding='utf8') as o:
     RegionResults = pd.read_csv(o)
 st.write(RegionResults)
@@ -52,38 +62,35 @@ fig3.axes.set_title("Плотность двумерного вектора (г�
 fig3.set_xlabel("Явка", fontsize=10)
 fig3.set_ylabel("Процент за Путина", fontsize=10)
 
-#, height=6
 st.pyplot()
 
-entrypoint = "https://nominatim.openstreetmap.org/search"
-params = {'state': RegionResults['Region'][0],
-          'format': 'xml',
-          'polygon_geojson': 1
-         }
-r = requests.get(entrypoint, params=params)
+#Машинное обучение: линейная регрессия
 
-st.write(r)
-st.write(r.text)
-soup = BeautifulSoup(r.text, features='xml')
-soup1 = soup.find("place").find("Polygon").find("coordinates")
-st.write(soup1.prettify())
+df_2008 = pd.read_csv('Ненецкий автономный округ 2008.csv', encoding='utf-8')
+df_2012 = pd.read_csv('Ненецкий автономный округ 2012.csv', encoding='utf-8')
+df_2018 = pd.read_csv('Ненецкий автономный округ 2018.csv', encoding='utf-8')
 
-#RegionJson = r.json()
-#RegionPoly = geopandas.GeoDataFrame.from_features(RegionJson)
-#st.write(RegionPoly)
-"""
-for i in set(RegionResults['Subregion']):
-    st.write(i)
-    j = i
-    if str(i[-2:])=='ая':
-        j = i[:-2]+'ий'
-    st.write(j)
-    params = {'q': j,
-              'format': 'geojson'}
-    r = requests.get(entrypoint, params=params)
-    st.write(r)
-    st.write(r.text)
-    Sub = r.json()
-    SubregionPoly = geopandas.GeoDataFrame.from_features(Sub)
-    st.write(SubregionPoly)
-"""
+df = pd.concat([df_2008, df_2012, df_2018], keys = [2008, 2012, 2018])
+df = df.reset_index(level=[0,1])
+df = df.drop(columns = ["level_1", "Unnamed: 0"])
+df = df.rename(columns = {"level_0": "Year"})
+reg = LinearRegression()
+reg.fit(df[["Turnout"]], df["Percentage"])
+
+fig4 = df.plot.scatter(x="Turnout", y="Percentage")
+x = pd.DataFrame(dict(Turnout=np.linspace(0, 1)))
+plt.plot(x["Turnout"], reg.predict(x), color="C1", lw=2)
+
+st.pyplot()
+
+#Регулярные выражения
+df_adv = pd.get_dummies(df, columns = ["Year", "Subregion"], drop_first = True)
+years = df_adv.filter(regex=r'^Year*').columns
+subregions = df_adv.filter(regex=r'^Subregion*').columns
+reg_fe = LinearRegression()
+reg_fe.fit(df_adv[["Turnout"] + list(years) + list(subregions)], df_adv["Percentage"])
+
+st.write("Результат оценивания регрессии процента за В.В.Путина на явку по УИКам")
+st.write("Коэффициент влияния явки на процент голосов за Путина", reg_fe.coef_[1])
+st.write("Константа:", reg_fe.intercept_)
+
