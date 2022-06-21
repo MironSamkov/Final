@@ -7,3 +7,7 @@ geopandas==0.10.2
 geojson
 bs4
 xml-python
+fiona
+scikit-learn
+networkx
+pyvis
